@@ -174,7 +174,7 @@ void init() {
     locLineY = glGetUniformLocation(program[CircleProgram], "lineY");
     locLineHalfLen = glGetUniformLocation(program[CircleProgram], "lineHalfLen");
 
-    glClearColor(1.0f, 1.0f, 0.0f, 1.0f);
+    glClearColor(1.0f, 1.0f, 0.0f, 1.0f); // Sarga hatterszin
 }
 
 // Visszapattanas
