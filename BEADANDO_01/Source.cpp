@@ -1,4 +1,4 @@
-﻿#include <GL/glew.h>
+#include <GL/glew.h>
 #include <GLFW/glfw3.h>
 #include <glm/glm.hpp>
 #include <iostream>
@@ -59,17 +59,18 @@ const float SPEED = 0.005f;
 bool colorSwapped = false;
 
 // Vonal
-const float LINE_HALF_LEN_NDC = (windowWidth / 3.0f) / (windowWidth / 2.0f);
+const float LINE_HALF_LEN_NDC = (windowWidth / 3.0f) / (windowWidth / 1.0f);
 float lineY_NDC = 0.0f;
 const float LINE_STEP_PX = 5.0f;
 const float LINE_STEP_NDC = LINE_STEP_PX / (windowHeight / 2.0f);
 
-// Szakasz csucsai
+// Vonal csucsai
 array<vec2, 2>  lineVertices = {
     vec2(-LINE_HALF_LEN_NDC, lineY_NDC),
     vec2(LINE_HALF_LEN_NDC, lineY_NDC)
 };
 
+// Uniform valtozok
 GLint   locCircleCenter;
 GLint   locCircleRadius;
 GLint   locColorSwapped;
@@ -79,42 +80,6 @@ GLint   locLineY;
 GLint   locLineHalfLen;
 
 // Segedfuggvenyek
-bool checkOpenGLError() {
-    bool foundError = false;
-    int  glErr = glGetError();
-    while (glErr != GL_NO_ERROR) {
-        cout << "GL Hiba: " << glErr << endl;
-        foundError = true;
-        glErr = glGetError();
-    }
-    return foundError;
-}
-
-void printShaderLog(GLuint shader) {
-    int  length = 0;
-    int  charsWritten = 0;
-    char* log = nullptr;
-    glGetShaderiv(shader, GL_INFO_LOG_LENGTH, &length);
-    if (length > 0) {
-        log = (char*)malloc(length);
-        glGetShaderInfoLog(shader, length, &charsWritten, log);
-        cout << "Shader Info: " << log << endl;
-        free(log);
-    }
-}
-
-void printProgramLog(GLuint prog) {
-    int  length = 0;
-    int  charsWritten = 0;
-    char* log = nullptr;
-    glGetProgramiv(prog, GL_INFO_LOG_LENGTH, &length);
-    if (length > 0) {
-        log = (char*)malloc(length);
-        glGetProgramInfoLog(prog, length, &charsWritten, log);
-        free(log);
-    }
-}
-
 string readShaderSource(const char* filePath) {
     ifstream fileStream(filePath, ios::in);
     if (!fileStream.is_open()) {
