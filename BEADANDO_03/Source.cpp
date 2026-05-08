@@ -1,401 +1,182 @@
-﻿#include <fstream>
-#include <GL/glew.h>
-#include <GLFW/glfw3.h>
-#include <glm/glm.hpp>
-#include <glm/gtc/matrix_inverse.hpp>
-#include <glm/gtc/type_ptr.hpp>
-#include <iostream>
-#include <string>
 #include <vector>
 #include <cmath>
+#include <iostream>
+#include <glm/glm.hpp>
+#include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtc/type_ptr.hpp>
 
-using namespace std;
-using namespace glm;
+const int VAOCount = 2;
+const int BOCount = 4;
+const int ProgramCount = 1;
+const int TextureCount = 1;
 
+#include "common.cpp"
 
-GLFWwindow* window;
+GLchar windowTitle[] = "Zagyva Mate Jozsef";
 
-GLboolean   keyboard[512] = { GL_FALSE };
-int         windowWidth = 800;
-int         windowHeight = 800;
-char        windowTitle[] = "Kockak";
+// Kamera paraméterek
+float cameraR = 9.0f;     // Sugár
+float cameraAngle = 0.0f;
+float cameraZ = 0.0f;
+bool lightOn = true; 
 
-// A sugár értéke 8 és 10 közé esik, kezdőértéke 9 (feladatkövetelmény: 8 <= r <= 10)
-const float CAM_R_MIN = 8.0f;
-const float CAM_R_MAX = 10.0f;
-float       camR = 9.0f;
-
-// A kamera szöge a Z-tengely körül radiánban; phi=0 => pozíció (r, 0, 0)
-float       camPhi = 0.0f;
-
-// A kamera magassága a Z-tengely mentén
-float       camZ = 0.0f;
-
-// Mozgási sebességek
-const float CAM_PHI_SPEED = 1.2f;  // szögsebesseg rad/s  (Bal/Jobb nyíl)
-const float CAM_Z_SPEED = 3.0f;  // magassági sebesség egység/s (Fel/Le nyíl)
-
-bool        lightingEnabled = true;     // Világítás állapota (L-lel váltható)
-float       lightAngle = 0.0f;     // A fény aktuális szöghelyzete a pályán
-const float LIGHT_ORBIT_R = 2.0f * 9.0f; // A pályarádisuz = 2*r
-
-// Shader uniform helyek (GPU-n lévő változók azonosítói)
-GLuint modelLoc, viewLoc, projectionLoc;
-GLuint inverseTransposeMatrixLoc;
-GLuint lightPositionLoc, cameraPositionLoc;
-GLuint lightColorLoc, lightingEnabledLoc;
-
-// Vetítési mátrix (csak ablakméret-változáskor számítjuk újra)
-mat4 projection;
-
-// Shader program azonosítója
-GLuint renderingProgram;
-
-// Vertex buffer és vertex array objektumok
-#define numVBOs 1
-#define numVAOs 1
-GLuint VBO[numVBOs];
-GLuint VAO[numVAOs];
-
-double currentTime, deltaTime, lastTime = 0.0;
-
-float cubeVertices[] = {
-    -0.5f, -0.5f, -0.5f,  0.0f,  0.0f, -1.0f,
-     0.5f,  0.5f, -0.5f,  0.0f,  0.0f, -1.0f,
-     0.5f, -0.5f, -0.5f,  0.0f,  0.0f, -1.0f,
-     0.5f,  0.5f, -0.5f,  0.0f,  0.0f, -1.0f,
-    -0.5f, -0.5f, -0.5f,  0.0f,  0.0f, -1.0f,
-    -0.5f,  0.5f, -0.5f,  0.0f,  0.0f, -1.0f,
-
-    -0.5f, -0.5f,  0.5f,  0.0f,  0.0f,  1.0f,
-     0.5f, -0.5f,  0.5f,  0.0f,  0.0f,  1.0f,
-     0.5f,  0.5f,  0.5f,  0.0f,  0.0f,  1.0f,
-     0.5f,  0.5f,  0.5f,  0.0f,  0.0f,  1.0f,
-    -0.5f,  0.5f,  0.5f,  0.0f,  0.0f,  1.0f,
-    -0.5f, -0.5f,  0.5f,  0.0f,  0.0f,  1.0f,
-
-    -0.5f,  0.5f,  0.5f, -1.0f,  0.0f,  0.0f,
-    -0.5f,  0.5f, -0.5f, -1.0f,  0.0f,  0.0f,
-    -0.5f, -0.5f, -0.5f, -1.0f,  0.0f,  0.0f,
-    -0.5f, -0.5f, -0.5f, -1.0f,  0.0f,  0.0f,
-    -0.5f, -0.5f,  0.5f, -1.0f,  0.0f,  0.0f,
-    -0.5f,  0.5f,  0.5f, -1.0f,  0.0f,  0.0f,
-
-     0.5f,  0.5f,  0.5f,  1.0f,  0.0f,  0.0f,
-     0.5f, -0.5f, -0.5f,  1.0f,  0.0f,  0.0f,
-     0.5f,  0.5f, -0.5f,  1.0f,  0.0f,  0.0f,
-     0.5f, -0.5f, -0.5f,  1.0f,  0.0f,  0.0f,
-     0.5f,  0.5f,  0.5f,  1.0f,  0.0f,  0.0f,
-     0.5f, -0.5f,  0.5f,  1.0f,  0.0f,  0.0f,
-
-     -0.5f, -0.5f, -0.5f,  0.0f, -1.0f,  0.0f,
-      0.5f, -0.5f, -0.5f,  0.0f, -1.0f,  0.0f,
-      0.5f, -0.5f,  0.5f,  0.0f, -1.0f,  0.0f,
-      0.5f, -0.5f,  0.5f,  0.0f, -1.0f,  0.0f,
-     -0.5f, -0.5f,  0.5f,  0.0f, -1.0f,  0.0f,
-     -0.5f, -0.5f, -0.5f,  0.0f, -1.0f,  0.0f,
-
-     -0.5f,  0.5f, -0.5f,  0.0f,  1.0f,  0.0f,
-      0.5f,  0.5f,  0.5f,  0.0f,  1.0f,  0.0f,
-      0.5f,  0.5f, -0.5f,  0.0f,  1.0f,  0.0f,
-      0.5f,  0.5f,  0.5f,  0.0f,  1.0f,  0.0f,
-     -0.5f,  0.5f, -0.5f,  0.0f,  1.0f,  0.0f,
-     -0.5f,  0.5f,  0.5f,  0.0f,  1.0f,  0.0f,
-};
-const int CUBE_VERTEX_COUNT = 36;
-
-vec3 cubePositions[3] = {
-    vec3(0.0f,  0.0f,  0.0f),   // középső kocka
-    vec3(0.0f,  0.0f,  2.0f),   // felső kocka
-    vec3(0.0f,  0.0f, -2.0f),   // alsó kocka
+GLfloat cubeVertices[] = {
+    -0.5f,-0.5f,-0.5f,  0.0f, 0.0f,-1.0f,   0.5f,-0.5f,-0.5f,  0.0f, 0.0f,-1.0f,   0.5f, 0.5f,-0.5f,  0.0f, 0.0f,-1.0f,
+     0.5f, 0.5f,-0.5f,  0.0f, 0.0f,-1.0f,  -0.5f, 0.5f,-0.5f,  0.0f, 0.0f,-1.0f,  -0.5f,-0.5f,-0.5f,  0.0f, 0.0f,-1.0f,
+    -0.5f,-0.5f, 0.5f,  0.0f, 0.0f, 1.0f,   0.5f,-0.5f, 0.5f,  0.0f, 0.0f, 1.0f,   0.5f, 0.5f, 0.5f,  0.0f, 0.0f, 1.0f,
+     0.5f, 0.5f, 0.5f,  0.0f, 0.0f, 1.0f,  -0.5f, 0.5f, 0.5f,  0.0f, 0.0f, 1.0f,  -0.5f,-0.5f, 0.5f,  0.0f, 0.0f, 1.0f,
+    -0.5f, 0.5f, 0.5f, -1.0f, 0.0f, 0.0f,  -0.5f, 0.5f,-0.5f, -1.0f, 0.0f, 0.0f,  -0.5f,-0.5f,-0.5f, -1.0f, 0.0f, 0.0f,
+    -0.5f,-0.5f,-0.5f, -1.0f, 0.0f, 0.0f,  -0.5f,-0.5f, 0.5f, -1.0f, 0.0f, 0.0f,  -0.5f, 0.5f, 0.5f, -1.0f, 0.0f, 0.0f,
+     0.5f, 0.5f, 0.5f,  1.0f, 0.0f, 0.0f,   0.5f, 0.5f,-0.5f,  1.0f, 0.0f, 0.0f,   0.5f,-0.5f,-0.5f,  1.0f, 0.0f, 0.0f,
+     0.5f,-0.5f,-0.5f,  1.0f, 0.0f, 0.0f,   0.5f,-0.5f, 0.5f,  1.0f, 0.0f, 0.0f,   0.5f, 0.5f, 0.5f,  1.0f, 0.0f, 0.0f,
+    -0.5f,-0.5f,-0.5f,  0.0f,-1.0f, 0.0f,   0.5f,-0.5f,-0.5f,  0.0f,-1.0f, 0.0f,   0.5f,-0.5f, 0.5f,  0.0f,-1.0f, 0.0f,
+     0.5f,-0.5f, 0.5f,  0.0f,-1.0f, 0.0f,  -0.5f,-0.5f, 0.5f,  0.0f,-1.0f, 0.0f,  -0.5f,-0.5f,-0.5f,  0.0f,-1.0f, 0.0f,
+    -0.5f, 0.5f,-0.5f,  0.0f, 1.0f, 0.0f,   0.5f, 0.5f,-0.5f,  0.0f, 1.0f, 0.0f,   0.5f, 0.5f, 0.5f,  0.0f, 1.0f, 0.0f,
+     0.5f, 0.5f, 0.5f,  0.0f, 1.0f, 0.0f,  -0.5f, 0.5f, 0.5f,  0.0f, 1.0f, 0.0f,  -0.5f, 0.5f,-0.5f,  0.0f, 1.0f, 0.0f
 };
 
-
-bool checkOpenGLError() {
-    bool found = false;
-    int err = glGetError();
-    while (err != GL_NO_ERROR) {
-        cerr << "glError: " << err << endl;
-        found = true;
-        err = glGetError();
+std::vector<glm::vec3> spherePos;
+std::vector<glm::vec2> sphereUV;
+std::vector<unsigned int> sphereIdx;
+void genSphere(float r, int slices, int stacks) {
+    for (int i = 0; i <= stacks; ++i) {
+        float phi = M_PI * i / stacks;
+        for (int j = 0; j <= slices; ++j) {
+            float theta = 2.0f * M_PI * j / slices;
+            spherePos.push_back(glm::vec3(r * sin(phi) * cos(theta), r * sin(phi) * sin(theta), r * cos(phi)));
+            sphereUV.push_back(glm::vec2((float)j / slices, (float)i / stacks));
+        }
     }
-    return found;
-}
-
-void printShaderLog(GLuint shader) {
-    int len = 0;
-    glGetShaderiv(shader, GL_INFO_LOG_LENGTH, &len);
-    if (len > 0) {
-        vector<char> log(len);
-        glGetShaderInfoLog(shader, len, nullptr, log.data());
-        cerr << "Shader log: " << log.data() << endl;
-    }
-}
-
-void printProgramLog(GLuint prog) {
-    int len = 0;
-    glGetProgramiv(prog, GL_INFO_LOG_LENGTH, &len);
-    if (len > 0) {
-        vector<char> log(len);
-        glGetProgramInfoLog(prog, len, nullptr, log.data());
-        cerr << "Program log: " << log.data() << endl;
+    for (int i = 0; i < stacks; ++i) {
+        for (int j = 0; j < slices; ++j) {
+            sphereIdx.push_back(i * (slices + 1) + j);
+            sphereIdx.push_back((i + 1) * (slices + 1) + j);
+            sphereIdx.push_back((i + 1) * (slices + 1) + j + 1);
+            sphereIdx.push_back(i * (slices + 1) + j);
+            sphereIdx.push_back((i + 1) * (slices + 1) + j + 1);
+            sphereIdx.push_back(i * (slices + 1) + j + 1);
+        }
     }
 }
 
-// Shader forrásfájl beolvasása
-string readShaderSource(const char* path) {
-    ifstream f(path, ios::in);
-    if (!f.is_open()) {
-        cerr << "Nem sikerult megnyitni a shader fajlt: " << path << endl;
-        return "";
-    }
-    string content, line;
-    while (getline(f, line)) content += line + "\n";
-    return content;
-}
+void initShaderProgram() {
+    ShaderInfo shaders[] = {
+        { GL_VERTEX_SHADER, "vertexShader.glsl", 0 },
+        { GL_FRAGMENT_SHADER, "fragmentShader.glsl", 0 },
+        { GL_NONE, nullptr, 0 }
 
-GLuint createShaderProgram() {
-    string vsStr = readShaderSource("vertexShader.glsl");
-    string fsStr = readShaderSource("fragmentShader.glsl");
-    const char* vsSrc = vsStr.c_str();
-    const char* fsSrc = fsStr.c_str();
-
-    GLuint vs = glCreateShader(GL_VERTEX_SHADER);
-    GLuint fs = glCreateShader(GL_FRAGMENT_SHADER);
-    glShaderSource(vs, 1, &vsSrc, nullptr);
-    glShaderSource(fs, 1, &fsSrc, nullptr);
-
-    GLint status;
-    glCompileShader(vs);
-    glGetShaderiv(vs, GL_COMPILE_STATUS, &status);
-    if (!status) { cerr << "Vertex shader fordítási hiba!" << endl; printShaderLog(vs); }
-
-    glCompileShader(fs);
-    glGetShaderiv(fs, GL_COMPILE_STATUS, &status);
-    if (!status) { cerr << "Fragment shader fordítási hiba!" << endl; printShaderLog(fs); }
-
-    GLuint prog = glCreateProgram();
-    glAttachShader(prog, vs);
-    glAttachShader(prog, fs);
-    glLinkProgram(prog);
-    glGetProgramiv(prog, GL_LINK_STATUS, &status);
-    if (!status) { cerr << "Shader linkelési hiba!" << endl; printProgramLog(prog); }
-
-    glDeleteShader(vs);
-    glDeleteShader(fs);
-    return prog;
-}
-
-void init(GLFWwindow* win) {
-    renderingProgram = createShaderProgram();
-
-    // VBO és VAO létrehozása
-    glGenBuffers(numVBOs, VBO);
-    glGenVertexArrays(numVAOs, VAO);
-
-    // Kocka adatok feltöltése a GPU-ra
-    glBindBuffer(GL_ARRAY_BUFFER, VBO[0]);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(cubeVertices), cubeVertices, GL_STATIC_DRAW);
+    };
+    program[0] = LoadShaders(shaders);
 
     glBindVertexArray(VAO[0]);
-
-    // 0-s attribútum
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(GLfloat), (GLvoid*)0);
+    glBindBuffer(GL_ARRAY_BUFFER, BO[0]);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(cubeVertices), cubeVertices, GL_STATIC_DRAW);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), 0);
     glEnableVertexAttribArray(0);
-
-    // 1-es attribútum
-    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(GLfloat), (GLvoid*)(3 * sizeof(GLfloat)));
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)(3 * sizeof(float)));
     glEnableVertexAttribArray(1);
 
-    glUseProgram(renderingProgram);
+    genSphere(0.25f, 30, 30);
+    glBindVertexArray(VAO[1]);
+    glBindBuffer(GL_ARRAY_BUFFER, BO[1]);
+    glBufferData(GL_ARRAY_BUFFER, spherePos.size() * sizeof(glm::vec3), spherePos.data(), GL_STATIC_DRAW);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, 0);
+    glEnableVertexAttribArray(0);
+    glBindBuffer(GL_ARRAY_BUFFER, BO[2]);
+    glBufferData(GL_ARRAY_BUFFER, sphereUV.size() * sizeof(glm::vec2), sphereUV.data(), GL_STATIC_DRAW);
+    glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 0, 0);
+    glEnableVertexAttribArray(2);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, BO[3]);
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER, sphereIdx.size() * sizeof(unsigned int), sphereIdx.data(), GL_STATIC_DRAW);
 
-    // Shader uniform változók helyeinek lekérdezése
-    modelLoc = glGetUniformLocation(renderingProgram, "matModel");
-    viewLoc = glGetUniformLocation(renderingProgram, "matView");
-    projectionLoc = glGetUniformLocation(renderingProgram, "matProjection");
-    inverseTransposeMatrixLoc = glGetUniformLocation(renderingProgram, "inverseTransposeMatrix");
-    lightPositionLoc = glGetUniformLocation(renderingProgram, "lightPosition");
-    cameraPositionLoc = glGetUniformLocation(renderingProgram, "cameraPosition");
-    lightColorLoc = glGetUniformLocation(renderingProgram, "lightColor");
-    lightingEnabledLoc = glGetUniformLocation(renderingProgram, "lightingEnabled");
+    texture[0] = SOIL_load_OGL_texture("sun.jpg", SOIL_LOAD_AUTO, SOIL_CREATE_NEW_ID, SOIL_FLAG_INVERT_Y);
 
-    // Perspektív vetítési mátrix beállítása 55 fokos látószöggel 
-    projection = perspective(
-        radians(55.0f),                           // látószög: 55 fok
-        (float)windowWidth / (float)windowHeight,
-        0.1f,
-        200.0f
-    );
-    glUniformMatrix4fv(projectionLoc, 1, GL_FALSE, value_ptr(projection));
-
-    // Fehértől eltérő diffúz fényszín
-    vec3 lightColor(1.0f, 0.6f, 0.1f);
-    glUniform3fv(lightColorLoc, 1, value_ptr(lightColor));
-
-    // Sötétkék háttér
-    glClearColor(0.05f, 0.05f, 0.1f, 1.0f);
-
-    // Mélységteszt engedélyezése
     glEnable(GL_DEPTH_TEST);
+
+    glDisable(GL_CULL_FACE); // Kikapcsolja a belső lapok eldobását, így a kocka elejét fogjuk látni
+    glClearColor(0.1f, 0.1f, 0.1f, 1.0f); // Sötétszürke háttér (az űr) beállítása
+
 }
 
-void drawCube(vec3 position) {
-    mat4 model = translate(mat4(1.0f), position);
-    glUniformMatrix4fv(modelLoc, 1, GL_FALSE, value_ptr(model));
-
-    mat3 itm = mat3(inverseTranspose(model));
-    glUniformMatrix3fv(inverseTransposeMatrixLoc, 1, GL_FALSE, value_ptr(itm));
-
-    glDrawArrays(GL_TRIANGLES, 0, CUBE_VERTEX_COUNT);
-}
-
-void display() {
+void display(GLFWwindow* window, double currentTime) {
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    glUseProgram(program[0]);
 
-    currentTime = glfwGetTime();
-    deltaTime = currentTime - lastTime;
-    lastTime = currentTime;
-    float dt = (float)deltaTime;
+    glm::vec3 camPos = glm::vec3(cameraR * cos(cameraAngle), cameraR * sin(cameraAngle), cameraZ);
+    matView = glm::lookAt(camPos, glm::vec3(0, 0, 0), glm::vec3(0, 0, 1)); // kamera középre néz
 
+    glUniformMatrix4fv(glGetUniformLocation(program[0], "matView"), 1, GL_FALSE, glm::value_ptr(matView));
+    glUniformMatrix4fv(glGetUniformLocation(program[0], "matProjection"), 1, GL_FALSE, glm::value_ptr(matProjection));
+    glUniform3fv(glGetUniformLocation(program[0], "cameraPosition"), 1, glm::value_ptr(camPos));
+    glUniform1i(glGetUniformLocation(program[0], "useLighting"), lightOn);
 
-    // Bal nyíl
-    if (keyboard[GLFW_KEY_LEFT])
-        camPhi -= CAM_PHI_SPEED * dt;
+    float lightR = 2.0f * cameraR;
+    glm::vec3 lightPos = glm::vec3(lightR * cos(currentTime), lightR * sin(currentTime), 0.0f);
+    glUniform3fv(glGetUniformLocation(program[0], "lightPosition"), 1, glm::value_ptr(lightPos));
 
-    // Jobb nyíl
-    if (keyboard[GLFW_KEY_RIGHT])
-        camPhi += CAM_PHI_SPEED * dt;
-
-    // Fel nyíl
-    if (keyboard[GLFW_KEY_UP])
-        camZ += CAM_Z_SPEED * dt;
-
-    // Le nyíl
-    if (keyboard[GLFW_KEY_DOWN])
-        camZ -= CAM_Z_SPEED * dt;
-
-    vec3 cameraPosition(
-        camR * cos(camPhi),
-        camR * sin(camPhi),
-        camZ
-    );
-
-    // A kamera mindig az origóba néz
-    vec3 cameraTarget(0.0f, 0.0f, 0.0f);
-
-    // UP vektor: (0, 0, 1) — a Z-tengely pozitív iránya
-    vec3 cameraUp(0.0f, 0.0f, 1.0f);
-
-    mat4 view = lookAt(cameraPosition, cameraTarget, cameraUp);
-    glUniformMatrix4fv(viewLoc, 1, GL_FALSE, value_ptr(view));
-    glUniform3fv(cameraPositionLoc, 1, value_ptr(cameraPosition));
-
-
-    lightAngle += 0.5f * dt;  // szögsebesseg
-    float lr = 2.0f * camR;   // pályarádisuz = 2*r
-    vec3 lightPosition(
-        lr * cos(lightAngle),
-        lr * sin(lightAngle),
-        0.0f                  // Z=0 magasságon kering
-    );
-    glUniform3fv(lightPositionLoc, 1, value_ptr(lightPosition));
-
-    glUniform1i(lightingEnabledLoc, lightingEnabled ? 1 : 0);
-
+    glUniform1i(glGetUniformLocation(program[0], "useTexture"), 0);
+    glUniform3f(glGetUniformLocation(program[0], "objectColor"), 1.0f, 1.0f, 1.0f);
     glBindVertexArray(VAO[0]);
-    for (int i = 0; i < 3; i++) {
-        drawCube(cubePositions[i]);
+
+    float zOffsets[] = { 0.0f, 2.0f, -2.0f };
+    for (int i = 0; i < 3; ++i) {
+        matModel = glm::translate(glm::mat4(1.0f), glm::vec3(0, 0, zOffsets[i]));
+        glUniformMatrix4fv(glGetUniformLocation(program[0], "matModel"), 1, GL_FALSE, glm::value_ptr(matModel));
+        glm::mat3 invTrans = glm::mat3(glm::inverseTranspose(matModel));
+        glUniformMatrix3fv(glGetUniformLocation(program[0], "inverseTransposeMatrix"), 1, GL_FALSE, glm::value_ptr(invTrans));
+        glDrawArrays(GL_TRIANGLES, 0, 36);
+    }
+
+    // Nap
+    glUniform1i(glGetUniformLocation(program[0], "useTexture"), 1);
+    glBindTexture(GL_TEXTURE_2D, texture[0]);
+    matModel = glm::translate(glm::mat4(1.0f), lightPos);
+    glUniformMatrix4fv(glGetUniformLocation(program[0], "matModel"), 1, GL_FALSE, glm::value_ptr(matModel));
+    glBindVertexArray(VAO[1]);
+    glDrawElements(GL_TRIANGLES, sphereIdx.size(), GL_UNSIGNED_INT, 0);
+}
+
+void keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods) {
+    if (action == GLFW_PRESS || action == GLFW_REPEAT) {
+        // Kamera mozgatása nyilakkal
+        if (key == GLFW_KEY_LEFT) cameraAngle += 0.05f;
+        if (key == GLFW_KEY_RIGHT) cameraAngle -= 0.05f;
+        if (key == GLFW_KEY_UP) cameraZ += 0.1f;
+        if (key == GLFW_KEY_DOWN) cameraZ -= 0.1f;
+
+        // Világítás kapcsoló
+        if (key == GLFW_KEY_L && action == GLFW_PRESS) lightOn = !lightOn;
+
+        // Kilépés ESC gombbal 
+        if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS) glfwSetWindowShouldClose(window, GL_TRUE);
     }
 }
 
-void cleanUpScene() {
-    glfwDestroyWindow(window);
-    glDeleteVertexArrays(numVAOs, VAO);
-    glDeleteBuffers(numVBOs, VBO);
-    glDeleteProgram(renderingProgram);
-    glfwTerminate();
-    exit(EXIT_SUCCESS);
-}
-    
-void framebufferSizeCallback(GLFWwindow* win, int w, int h) {
-    windowWidth = w;
-    windowHeight = h;
-    glViewport(0, 0, w, h);
-    
-    projection = perspective(radians(55.0f), (float)w / (float)h, 0.1f, 200.0f);
-    glUniformMatrix4fv(projectionLoc, 1, GL_FALSE, value_ptr(projection));
+// Üres Callbackek a Linker hibák elkerüléséhez
+void cursorPosCallback(GLFWwindow* window, double xPos, double yPos) {}
+void mouseButtonCallback(GLFWwindow* window, int button, int action, int mods) {}
+
+void framebufferSizeCallback(GLFWwindow* window, int width, int height) {
+    windowWidth = width; windowHeight = height;
+    glViewport(0, 0, width, height);
+    matProjection = glm::perspective(glm::radians(55.0f), (float)width / height, 0.1f, 100.0f); // 55 fok
 }
 
-void keyCallback(GLFWwindow* win, int key, int scancode, int action, int mods) {
-    // ESC
-    if (action == GLFW_PRESS && key == GLFW_KEY_ESCAPE)
-        cleanUpScene();
+int main() {
+    init(3, 3, GLFW_OPENGL_CORE_PROFILE);
 
-    // L gomb
-    if (action == GLFW_PRESS && key == GLFW_KEY_L) {
-        lightingEnabled = !lightingEnabled;
-    }
+    std::cout << "Bal - Jobb    :  Kamera forgatasa Z-tengely korul" << std::endl;
+    std::cout << "Fel - Le      :  Kamera mozgatasa a Z-tengely menten" << std::endl;
+    std::cout << "L             :  Vilagitas ki/be kapcsolasa" << std::endl;
+    std::cout << "ESC           :  Kilepes" << std::endl;
 
-    if (action == GLFW_PRESS)
-        keyboard[key] = GL_TRUE;
-    else if (action == GLFW_RELEASE)
-        keyboard[key] = GL_FALSE;
-}
-
-void cursorPosCallback(GLFWwindow* win, double x, double y) {}
-void mouseButtonCallback(GLFWwindow* win, int button, int action, int mods) {}
-
-void printControls() {
-    cout << "  Kockas beadando" << endl;
-    cout << "  Bal nyil       : Forgatas a Z-tengely korul (balra)" << endl;
-    cout << "  Jobb nyil      : Forgatas a Z-tengely korul (jobbra)" << endl;
-    cout << "  Fel nyil       : Emelkedes a Z-tengely menten" << endl;
-    cout << "  Le nyil        : Süllyedes a Z-tengely menten" << endl;
-    cout << "  L              : Vilagitas ki/bekapcsolasa" << endl;
-    cout << "  ESC            : Kilepes" << endl;
-    cout << endl;
-}
-
-int main(void) {
-    printControls();
-
-    if (!glfwInit()) {
-        cerr << "GLFW inicializalasi hiba!" << endl;
-        return EXIT_FAILURE;
-    }
-
-    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
-    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
-    glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
-
-    window = glfwCreateWindow(windowWidth, windowHeight, windowTitle, nullptr, nullptr);
-    if (!window) {
-        cerr << "Ablak letrehozasi hiba!" << endl;
-        glfwTerminate();
-        return EXIT_FAILURE;
-    }
-
-    glfwMakeContextCurrent(window);
-    glfwSetFramebufferSizeCallback(window, framebufferSizeCallback);
-    glfwSetKeyCallback(window, keyCallback);
-    glfwSetCursorPosCallback(window, cursorPosCallback);
-    glfwSetMouseButtonCallback(window, mouseButtonCallback);
-
-    if (glewInit() != GLEW_OK) {
-        cerr << "GLEW inicializalasi hiba!" << endl;
-        return EXIT_FAILURE;
-    }
-
-    glfwSwapInterval(1);
-
-     init(window);
-
-     while (!glfwWindowShouldClose(window)) {
-        display();
+    initShaderProgram();
+    framebufferSizeCallback(window, windowWidth, windowHeight);
+    while (!glfwWindowShouldClose(window)) {
+        display(window, glfwGetTime());
         glfwSwapBuffers(window);
         glfwPollEvents();
     }
-
-    cleanUpScene();
-    return EXIT_SUCCESS;
+    cleanUpScene(0);
+    return 0;
 }
